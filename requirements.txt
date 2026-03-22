@@ -1,0 +1,6 @@
+streamlit
+pandas
+requests
+xmltodict
+matplotlib
+openpyxl
