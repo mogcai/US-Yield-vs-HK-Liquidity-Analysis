@@ -88,7 +88,7 @@ def get_df_mo(year):
 # --- 側邊欄設定 ---
 st.sidebar.header("⚙️ 篩選條件")
 
-country_options = ["美國 (US Treasury)", "香港 (HK HIBOR)", "澳門 (MO MAIBOR)"]
+country_options = ["US (US Treasury)", "HK (HK HIBOR)", "MO (MO MAIBOR)"]
 selected_countries = st.sidebar.multiselect("選擇顯示地區", country_options, default=country_options)
 
 current_year = datetime.today().year
@@ -105,11 +105,11 @@ selected_tenor = st.sidebar.selectbox("選擇利率期限", list(tenor_map.keys(
 if selected_years and selected_countries:
     with st.spinner('正在同步數據...'):
         df_us, df_hk, df_mo = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-        if "美國 (US Treasury)" in selected_countries:
+        if "US (US Treasury)" in selected_countries:
             df_us = pd.concat([get_df_us(y) for y in selected_years])
-        if "香港 (HK HIBOR)" in selected_countries:
+        if "HK (HK HIBOR)" in selected_countries:
             df_hk = pd.concat([get_df_hk_hibor(y) for y in selected_years])
-        if "澳門 (MO MAIBOR)" in selected_countries:
+        if "MO (MO MAIBOR)" in selected_countries:
             df_mo = pd.concat([get_df_mo(y) for y in selected_years])
 
     # 過濾年份
@@ -126,14 +126,14 @@ if selected_years and selected_countries:
         hk_col = tenor_map[selected_tenor]["HK"]
         mo_col = tenor_map[selected_tenor]["MO"]
 
-        if "美國 (US Treasury)" in selected_countries and not df_us.empty:
-            ax.plot(df_us.index, df_us[us_col], label="美國國債 (US Treasury)", color='#1f77b4', linewidth=2)
+        if "US (US Treasury)" in selected_countries and not df_us.empty:
+            ax.plot(df_us.index, df_us[us_col], label="US Treasury", color='#1f77b4', linewidth=2)
         
-        if "香港 (HK HIBOR)" in selected_countries and not df_hk.empty:
-            ax.plot(df_hk.index, df_hk[hk_col], label="香港 HIBOR", color='#d62728', linestyle='--')
+        if "HK (HK HIBOR)" in selected_countries and not df_hk.empty:
+            ax.plot(df_hk.index, df_hk[hk_col], label="HK HIBOR", color='#d62728', linestyle='--')
         
-        if "澳門 (MO MAIBOR)" in selected_countries and mo_col and not df_mo.empty:
-            ax.plot(df_mo.index, df_mo[mo_col], label="澳門 MAIBOR", color='#2ca02c', alpha=0.8)
+        if "MO (MO MAIBOR)" in selected_countries and mo_col and not df_mo.empty:
+            ax.plot(df_mo.index, df_mo[mo_col], label="MO MAIBOR", color='#2ca02c', alpha=0.8)
 
         all_dates = []
         if not df_us.empty: all_dates.extend([df_us.index.min(), df_us.index.max()])
@@ -151,14 +151,14 @@ if selected_years and selected_countries:
         st.write("### 🧮 最新利率摘要")
         m_cols = st.columns(len(selected_countries))
         idx = 0
-        if "美國 (US Treasury)" in selected_countries and not df_us.empty:
-            m_cols[idx].metric("美國 (US)", f"{df_us[us_col].iloc[-1]:.3f}%")
+        if "US (US Treasury)" in selected_countries and not df_us.empty:
+            m_cols[idx].metric("US (US)", f"{df_us[us_col].iloc[-1]:.3f}%")
             idx += 1
-        if "香港 (HK HIBOR)" in selected_countries and not df_hk.empty:
-            m_cols[idx].metric("香港 (HK)", f"{df_hk[hk_col].iloc[-1]:.3f}%")
+        if "HK (HK HIBOR)" in selected_countries and not df_hk.empty:
+            m_cols[idx].metric("HK (HK)", f"{df_hk[hk_col].iloc[-1]:.3f}%")
             idx += 1
-        if "澳門 (MO MAIBOR)" in selected_countries and not df_mo.empty:
-            m_cols[idx].metric("澳門 (MO)", f"{df_mo['oneMonth'].iloc[-1]:.3f}%")
+        if "MO (MO MAIBOR)" in selected_countries and not df_mo.empty:
+            m_cols[idx].metric("MO (MO)", f"{df_mo['oneMonth'].iloc[-1]:.3f}%")
             idx += 1
     else:
         st.warning("⚠️ 無有效數據。")
