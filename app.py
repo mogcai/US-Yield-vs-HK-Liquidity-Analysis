@@ -7,18 +7,18 @@ import xmltodict
 import json
 
 # 設定網頁標題
-st.set_page_config(page_title="US vs HK vs MO Financial Analysis", layout="wide")
-st.title("📈 跨區域金融數據分析：美國 vs 香港 vs 澳門")
+st.set_page_config(page_title="US vs HK vs MO Yield Comparison", layout="wide")
+st.title("🌐 三地利率走勢對比：美國 (Treasury) vs 香港 (HIBOR) vs 澳門 (MAIBOR)")
 
 # --- 數據抓取函數 ---
 
 @st.cache_data(ttl=3600)
 def get_df_us(year):
+    """獲取美國國債收益率"""
     try:
         us_url = f'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value={year}'
         response = requests.get(us_url)
-        us_data = response.content
-        dict_data_us = xmltodict.parse(us_data)
+        dict_data_us = xmltodict.parse(response.content)
         
         dict_us = dict()
         properties = dict_data_us['feed']['entry'][0]['content']['m:properties'].keys()
@@ -27,128 +27,123 @@ def get_df_us(year):
             try:
                 clean_key = key.replace('d:', '')
                 dict_us[clean_key] = [i['content']['m:properties'][key]['#text'] for i in dict_data_us['feed']['entry']]
-            except:
-                pass
+            except: pass
         
-        df_us = pd.DataFrame(dict_us)
-        df_us['Date'] = [datetime.strptime(i, '%Y-%m-%dT%H:%M:%S') for i in df_us['NEW_DATE']]
-        df_us.set_index('Date', inplace=True)
-        cols = [c for c in df_us.columns if 'BC_' in c]
-        df_us[cols] = df_us[cols].apply(pd.to_numeric)
-        return df_us
+        df = pd.DataFrame(dict_us)
+        df['Date'] = pd.to_datetime(df['NEW_DATE'])
+        df.set_index('Date', inplace=True)
+        cols = [c for c in df.columns if 'BC_' in c]
+        df[cols] = df[cols].apply(pd.to_numeric)
+        return df
     except Exception as e:
-        st.error(f"獲取美國數據失敗: {e}")
+        st.error(f"美國數據獲取失敗: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
-def get_df_hk():
+def get_df_hk_hibor():
+    """獲取香港 HIBOR 利率"""
     try:
-        hk_url = 'https://api.hkma.gov.hk/public/market-data-and-statistics/daily-monetary-statistics/daily-figures-interbank-liquidity'
+        # 獲取最近一年的 HIBOR 數據
+        hk_url = 'https://api.hkma.gov.hk/public/market-data-and-statistics/interest-rates-and-exchange-rates/hibor-fixing-daily?pagesize=500'
         response = requests.get(hk_url)
-        dict_data_hk = json.loads(response.content)
-        records = dict_data_hk['result']['records']
-        df_hk = pd.DataFrame(records)
-        df_hk['Date'] = pd.to_datetime(df_hk['end_of_date'])
-        df_hk.set_index('Date', inplace=True)
-        df_hk.sort_index(inplace=True)
-        return df_hk
+        data = response.json()
+        records = data['result']['records']
+        df = pd.DataFrame(records)
+        df['Date'] = pd.to_datetime(df['end_of_date'])
+        df.set_index('Date', inplace=True)
+        # 確保數值正確
+        for col in ['hibor_1m', 'hibor_3m', 'hibor_1w']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df.sort_index()
     except Exception as e:
-        st.error(f"獲取香港數據失敗: {e}")
+        st.error(f"香港 HIBOR 獲取失敗: {e}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def get_df_mo(year):
+    """獲取澳門 MAIBOR 利率"""
     try:
-        url = r'https://www.amcm.gov.mo/api/v1.0/cms/financial_info'
+        url = 'https://www.amcm.gov.mo/api/v1.0/cms/financial_info'
+        headers = {'User-Agent': 'Mozilla/5.0'}
         today = datetime.today().strftime('%Y%m%d')
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
         end = today if year == datetime.today().year else f'{year}1231'
-        payload = {
-            "QueryType": "Maibor",
-            "Begin": int(f"{year}0101"),
-            "End": int(end)
-        }
-        # 使用 requests.get 搭配 payload
-        response = requests.get(url, params=payload, headers=headers)
-        mo_data = response.json()
+        payload = {"QueryType": "Maibor", "Begin": int(f"{year}0101"), "End": int(end)}
         
-        df = pd.DataFrame(mo_data['data'])
+        response = requests.get(url, params=payload, headers=headers)
+        df = pd.DataFrame(response.json()['data'])
         df.set_index('date', inplace=True)
         df.index = pd.to_datetime(df.index)
-        df.sort_index(inplace=True)
-        # 清洗數據並轉換為數值 (百分比格式)
-        df['oneMonth'] = pd.to_numeric(df['oneMonth'].str.replace('%', ''), errors='coerce') / 100
-        return df
+        # 轉為百分比數值 (例如 5.1% -> 5.1)
+        df['oneMonth'] = pd.to_numeric(df['oneMonth'].str.replace('%', ''), errors='coerce')
+        return df.sort_index()
     except Exception as e:
-        st.error(f"獲取澳門數據失敗: {e}")
+        st.error(f"澳門數據獲取失敗: {e}")
         return pd.DataFrame()
 
-# --- 側邊欄控制 ---
-st.sidebar.header("📊 參數設定")
+# --- 側邊欄設定 ---
+st.sidebar.header("🔍 分析參數")
 current_year = datetime.today().year
-selected_years = st.sidebar.multiselect("選擇數據年份", [current_year-2, current_year-1, current_year], default=[current_year-1, current_year])
-us_tenor = st.sidebar.selectbox("選擇美國債券期限", ["BC_2YEAR", "BC_10YEAR", "BC_3MONTH", "BC_1MONTH"], index=0)
+selected_years = st.sidebar.multiselect("選擇年份", [current_year-2, current_year-1, current_year], default=[current_year-1, current_year])
 
-# --- 數據加載邏輯 ---
-with st.spinner('正在從各官方 API 獲取最新數據...'):
-    # 美國與澳門數據 (按年份抓取並合併)
-    df_us_all = pd.DataFrame()
-    df_mo_all = pd.DataFrame()
-    
-    if selected_years:
-        df_us_all = pd.concat([get_df_us(y) for y in selected_years])
-        df_mo_all = pd.concat([get_df_mo(y) for y in selected_years])
-    
-    # 香港數據
-    df_hk_all = get_df_hk()
+# 定義期限對應關係
+tenor_map = {
+    "1 Month (1個月)": {"US": "BC_1MONTH", "HK": "hibor_1m", "MO": "oneMonth"},
+    "3 Month (3個月)": {"US": "BC_3MONTH", "HK": "hibor_3m", "MO": None} # 澳門API通常提供1M
+}
+selected_tenor = st.sidebar.selectbox("選擇利率期限", list(tenor_map.keys()))
 
-# --- 圖表與展示 ---
+# --- 數據加載 ---
+with st.spinner('同步三地官方 API 數據中...'):
+    df_us = pd.concat([get_df_us(y) for y in selected_years]) if selected_years else pd.DataFrame()
+    df_mo = pd.concat([get_df_mo(y) for y in selected_years]) if selected_years else pd.DataFrame()
+    df_hk = get_df_hk_hibor()
 
-if not df_us_all.empty:
-    st.subheader(f"趨勢對比：US {us_tenor} vs Macau MAIBOR vs HK Liquidity")
-    
-    fig, ax1 = plt.subplots(figsize=(12, 6))
+# --- 視覺化圖表 ---
 
-    # 第一軸 (左軸)：顯示利率 (%)
-    color1 = 'tab:blue'
-    color2 = 'tab:green'
-    ax1.set_xlabel('Date')
-    ax1.set_ylabel('Rate (%)', color='black')
-    
-    # 畫美國債
-    ax1.plot(df_us_all.index, df_us_all[us_tenor].astype(float), color=color1, label=f"US {us_tenor} Yield")
-    
-    # 畫澳門 MAIBOR (乘以 100 以對應百分比顯示)
-    if not df_mo_all.empty:
-        ax1.plot(df_mo_all.index, df_mo_all['oneMonth'] * 100, color=color2, label="Macau MAIBOR (1M)", alpha=0.7)
-    
-    ax1.tick_params(axis='y')
-    ax1.legend(loc='upper left')
+st.subheader(f"三地利率走勢圖 ({selected_tenor})")
 
-    # 第二軸 (右軸)：顯示香港銀行結餘 (金額)
-    if not df_hk_all.empty:
-        ax2 = ax1.twinx()
-        color3 = 'tab:red'
-        ax2.set_ylabel('HK Aggregate Balance (Mio HKD)', color=color3)
-        ax2.plot(df_hk_all.index, df_hk_all['forecast_aggregate_bal_u'], color=color3, label="HK Agg Balance", linestyle='--', alpha=0.5)
-        ax2.tick_params(axis='y', labelcolor=color3)
-        ax2.legend(loc='upper right')
+if not df_us.empty:
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # 獲取對應欄位名稱
+    us_col = tenor_map[selected_tenor]["US"]
+    hk_col = tenor_map[selected_tenor]["HK"]
+    mo_col = tenor_map[selected_tenor]["MO"]
 
+    # 繪製美國
+    ax.plot(df_us.index, df_us[us_col], label=f"US Treasury ({us_col})", linewidth=2)
+    
+    # 繪製香港
+    if not df_hk.empty and hk_col in df_hk.columns:
+        # 過濾日期以符合選擇年份
+        df_hk_filtered = df_hk[df_hk.index.year.isin(selected_years)]
+        ax.plot(df_hk_filtered.index, df_hk_filtered[hk_col], label=f"HK HIBOR ({hk_col})", linestyle='--')
+
+    # 繪製澳門
+    if mo_col and not df_mo.empty:
+        ax.plot(df_mo.index, df_mo[mo_col], label=f"Macau MAIBOR (1M)", alpha=0.7)
+
+    ax.set_ylabel("利率 (%)")
+    ax.set_title(f"US vs HK vs MO Interest Rates")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
     st.pyplot(fig)
 
-    # 數據檢查區塊
-    with st.expander("查看原始數據表格"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.write("🇺🇸 US Treasury", df_us_all[[us_tenor]].tail())
-        with col2:
-            st.write("🇲🇴 Macau MAIBOR", df_mo_all[['oneMonth']].tail())
-        with col3:
-            st.write("🇭🇰 HK Agg Balance", df_hk_all[['forecast_aggregate_bal_u']].tail())
+    # 數據比較表格
+    st.write("### 最新利率數值比較")
+    latest_data = {
+        "地區": ["美國 (US)", "香港 (HK)", "澳門 (MO)"],
+        "最新利率 (%)": [
+            f"{df_us[us_col].iloc[-1]:.4f}%" if not df_us.empty else "N/A",
+            f"{df_hk[hk_col].iloc[-1]:.4f}%" if not df_hk.empty else "N/A",
+            f"{df_mo[mo_col].iloc[-1]:.4f}%" if mo_col and not df_mo.empty else "N/A"
+        ]
+    }
+    st.table(pd.DataFrame(latest_data))
+
 else:
-    st.info("請在側邊欄選擇年份以開始分析。")
+    st.info("請在左側選擇年份以顯示圖表。")
 
 st.markdown("---")
-st.caption(f"最後更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 數據來源: US Treasury, HKMA, AMCM")
+st.caption("數據來源：美國財政部, 香港金融管理局 (HKMA), 澳門金融管理局 (AMCM)")
